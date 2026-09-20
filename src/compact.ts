@@ -54,18 +54,25 @@ export function resolveOptions(options: CompactOptions = {}): ResolvedCompactOpt
   };
 }
 
-/** The two `noul` questions asked about one call: keep the call, keep its result. */
+/**
+ * The `noul` questions asked about one call: keep the call, keep its result.
+ * A result an earlier round already cut to a head is not asked about again;
+ * there is no full output left to keep.
+ */
 export function questionsFor(call: ToolCall): JevQuestions {
-  return {
+  const questions: JevQuestions = {
     [`call_${call.id}`]: {
       type: 'noul',
       instructions: `Tool call ${call.id} (${call.tool}) should stay in the history: knowing this call was made, with its input, still matters for what the assistant does next`,
     },
-    [`result_${call.id}`]: {
+  };
+  if (call.originalChars === undefined) {
+    questions[`result_${call.id}`] = {
       type: 'noul',
       instructions: `The full output of tool call ${call.id} (${call.tool}, ${call.resultChars} chars) should stay in the history verbatim: the assistant still needs its contents and re-running the tool would not do`,
-    },
-  };
+    };
+  }
+  return questions;
 }
 
 /**
@@ -128,7 +135,8 @@ async function askBatch(
       call.id,
       {
         keepCall: noulAnswer(answers, `call_${call.id}`),
-        keepResult: noulAnswer(answers, `result_${call.id}`),
+        keepResult:
+          call.originalChars === undefined ? noulAnswer(answers, `result_${call.id}`) : 0,
       },
     ]),
   );

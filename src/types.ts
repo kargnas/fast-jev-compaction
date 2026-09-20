@@ -45,6 +45,10 @@ export interface ToolCall {
   isError: boolean;
   /** In the first or the newest preserved messages; never a candidate. */
   pinned: boolean;
+  /** Length the result had before an earlier round cut it to a head plus note. */
+  originalChars?: number;
+  /** Characters of that head. */
+  headChars?: number;
 }
 
 export interface CallAnswer {

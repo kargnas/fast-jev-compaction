@@ -14,6 +14,7 @@ import {
   reductionBound,
   reductionRatio,
   resolveOptions,
+  truncatedResult,
   type HistoryToolCall,
   type JevAsker,
   type JevQuestions,
@@ -390,6 +391,35 @@ describe('compact', () => {
     expect(reductionBound(kept)).toBeGreaterThanOrEqual(reductionRatio(dropped));
     expect(reductionBound(kept) - reductionRatio(dropped)).toBeLessThan(0.1);
     expect(reductionBound(kept)).toBeGreaterThan(reductionRatio(kept));
+  });
+
+  it('does not ask again about a result an earlier round already cut, and says so in the state', async () => {
+    const first = await compact(
+      transcript(),
+      fakeJev((name) => (name.startsWith('call_') ? 0.9 : 0.1)),
+      { preserveRecentMessages: 1, truncateHeadChars: 40 },
+    );
+    expect(first.decisions.map((d) => d.action)).toEqual(['drop_result', 'drop_result', 'drop_result']);
+    const cutText = first.messages.find((m) => m.toolResults?.[0]?.tool_use_id === 'tool-1')?.toolResults?.[0]?.text ?? '';
+    expect(truncatedResult(cutText)).toEqual({ cut: fileA.length - 40, head: 40, original: fileA.length });
+
+    const seen: Seen[] = [];
+    const second = await compact(first.messages, fakeJev(() => 0.9, seen), {
+      preserveRecentMessages: 1,
+      truncateHeadChars: 40,
+    });
+    // t3's result was short enough to survive round 1 whole, so it is still asked about
+    expect(seen[0]?.questions).toEqual(['call_t1', 'call_t2', 'call_t3', 'result_t3']);
+    expect(second.decisions.map((d) => [d.action, d.keepResult])).toEqual([
+      ['drop_result', 0],
+      ['drop_result', 0],
+      ['keep', 0.9],
+    ]);
+    expect(second.messages).toEqual(first.messages);
+    const entry = (seen[0]?.state as { history: { tool_calls?: HistoryToolCall[] }[] }).history[1];
+    expect(entry?.tool_calls?.[0]?.result).toBe(
+      `ok, ${fileA.length} chars originally; an earlier compaction cut it to a 40-char head`,
+    );
   });
 
   it('counts candidates the fitted state no longer shows, and keeps them on request', async () => {

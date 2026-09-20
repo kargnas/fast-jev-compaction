@@ -213,6 +213,7 @@ export function summarize(result: CompactResult): string {
     stats.callsDropped > 0 ? `${stats.callsDropped} call_dropped` : '',
     stats.pinned > 0 ? `${stats.pinned} pinned` : '',
     stats.unscored > 0 ? `${stats.unscored} unscored` : '',
+    stats.noticesTruncated > 0 ? `${stats.noticesTruncated} notices truncated` : '',
   ].filter(Boolean);
   return `${percent(reductionRatio(result))} reduction; ${
     parts.join(', ') || 'no tool calls'

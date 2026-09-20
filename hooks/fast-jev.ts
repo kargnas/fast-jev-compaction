@@ -109,6 +109,7 @@ function toolUseSummary(tool: ToolUse): ToolUseSummary {
     input: tool.input,
   };
   if (tool.text !== undefined) summary.text = tool.text;
+  if (tool.result !== undefined) summary.result = tool.result;
   if (tool.isError) summary.isError = true;
   return summary;
 }
@@ -118,7 +119,17 @@ function toolResultSummary(result: ToolResult): ToolResultSummary {
     tool_use_id: result.tool_use_id,
     text: result.text,
     isError: result.isError ?? false,
+    ...(result.result !== undefined ? { result: result.result } : {}),
   };
+}
+
+const PORTABLE_TOOL_ID = /^[a-zA-Z0-9_-]+$/;
+
+function toolIds(message: Message): string[] {
+  return [
+    ...message.toolUses.map((tool) => tool.tool_use_id),
+    ...(message.toolResults ?? []).map((result) => result.tool_use_id),
+  ];
 }
 
 /**
@@ -139,18 +150,54 @@ export function toSessionMessages(
     for (const tool of message.toolUses) uses.set(tool, tool);
     for (const result of message.toolResults ?? []) results.set(result, result);
   }
+
+  const owners = new Map<string, Set<Message>>();
+  const reservedIds = new Set<string>();
+  for (const message of output) {
+    for (const id of toolIds(message)) {
+      reservedIds.add(id);
+      const ownedBy = owners.get(id) ?? new Set<Message>();
+      ownedBy.add(message);
+      owners.set(id, ownedBy);
+    }
+  }
+
+  const remappedIds = new Map<string, string>();
+  let nextId = 1;
+  for (const [id, ownedBy] of owners) {
+    if (PORTABLE_TOOL_ID.test(id)) continue;
+    const rebuiltOwners = [...ownedBy].filter((message) => !messages.has(message));
+    if (rebuiltOwners.length === 0) continue;
+    // Rebuilding an engine-owned counterpart can discard hidden blocks that SessionMessage does not expose.
+    if (rebuiltOwners.length !== ownedBy.size) {
+      throw new Error('cannot safely remap non-portable tool id across an engine handle');
+    }
+    let replacement = '';
+    do {
+      replacement = `fjc_${nextId++}`;
+    } while (reservedIds.has(replacement));
+    reservedIds.add(replacement);
+    remappedIds.set(id, replacement);
+  }
+
   return output.map((message) => {
     const own = messages.get(message);
     if (own) return own;
     const rebuilt: SessionMessage = {
       role: message.role,
       text: message.text,
-      toolUses: message.toolUses.map((tool) => uses.get(tool) ?? toolUseSummary(tool)),
+      toolUses: message.toolUses.map((tool) => {
+        const summary = uses.get(tool) ?? toolUseSummary(tool);
+        const tool_use_id = remappedIds.get(summary.tool_use_id);
+        return tool_use_id ? { ...summary, tool_use_id } : summary;
+      }),
     };
     if (message.toolResults && message.toolResults.length > 0) {
-      rebuilt.toolResults = message.toolResults.map(
-        (result) => results.get(result) ?? toolResultSummary(result),
-      );
+      rebuilt.toolResults = message.toolResults.map((result) => {
+        const summary = results.get(result) ?? toolResultSummary(result);
+        const tool_use_id = remappedIds.get(summary.tool_use_id);
+        return tool_use_id ? { ...summary, tool_use_id } : summary;
+      });
     }
     return rebuilt;
   });

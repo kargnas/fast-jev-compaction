@@ -2,8 +2,9 @@
 
 Claude Code plugin that replaces the compaction summary with Jev decisions:
 every tool call and result is scored in one fast request, stale ones are
-dropped or truncated, everything kept stays verbatim. Also usable as an npm
-library.
+dropped or truncated, and kept content stays verbatim. The Claude Code adapter
+only remaps non-portable internal tool IDs when it must rebuild a message. Also
+usable as an npm library.
 
 ## What and why
 
@@ -52,6 +53,11 @@ built-in compaction summary with the original messages.
 7. The message list is rebuilt: a message that loses all its content is
    removed, untouched messages are returned as the same objects, and no result
    is ever left without its call.
+8. In the Claude Code adapter, rebuilt messages use collision-free portable IDs
+   for any tool call ID outside `[a-zA-Z0-9_-]`; every matching result reference
+   receives the same ID. Untouched engine messages keep their opaque handles.
+   If only one side of a pair can be rebuilt safely, the hook falls back to the
+   built-in compactor instead of discarding hidden message blocks.
 
 Jev failures, malformed answers, a missing key, or a history that cannot be
 fitted throw; the caller (or the Claude Code hook) decides what to fall back to.

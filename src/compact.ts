@@ -183,6 +183,7 @@ export function applyDecisions(
           input: tool.input,
           text,
         };
+        if (tool.result !== undefined) copy.result = tool.result;
         if (tool.isError) copy.isError = true;
         return copy;
       });
@@ -197,6 +198,7 @@ export function applyDecisions(
               tool_use_id: result.tool_use_id,
               text,
               isError: result.isError,
+              ...(result.result !== undefined ? { result: result.result } : {}),
             };
       });
     if (

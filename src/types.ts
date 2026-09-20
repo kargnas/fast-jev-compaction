@@ -1,22 +1,24 @@
 export type Role = 'user' | 'assistant';
 
 /**
- * A tool_use block of an assistant message. `text` and `isError` mirror the
- * outcome once the transcript holds it (Claude Code attaches them).
+ * A tool_use block of an assistant message. `result`, `text`, and `isError`
+ * mirror the outcome once the transcript holds it (Claude Code attaches them).
  */
 export interface ToolUse {
   tool_use_id: string;
   tool: string;
   input: Record<string, unknown>;
+  result?: unknown;
   text?: string;
   isError?: boolean;
 }
 
-/** A tool_result block of a user message. */
+/** A tool_result block of a user message, including its hidden tool record. */
 export interface ToolResult {
   tool_use_id: string;
   text: string;
   isError?: boolean;
+  result?: unknown;
 }
 
 /**

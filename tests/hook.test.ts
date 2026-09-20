@@ -107,6 +107,54 @@ describe('session message mapping', () => {
     expect(out[1]).toBe(messages[1]);
     expect(out[2]).toBe(messages[2]);
   });
+
+  it('remaps a rebuilt non-portable tool id without colliding with retained ids', () => {
+    const messages = transcript();
+    const nonPortableId = 'Agent:0#6a5f0ed058704519a5b38083d7e08f8a';
+    messages[1]!.toolUses[0]!.tool_use_id = nonPortableId;
+    messages[2]!.toolResults![0]!.tool_use_id = nonPortableId;
+    messages[1]!.toolUses[0]!.result = { agent: 'record' };
+    messages[2]!.toolResults![0]!.result = { output: 'record' };
+    messages[1]!.toolUses[0]!.text = 'x'.repeat(2000);
+    messages[2]!.toolResults![0]!.text = 'x'.repeat(2000);
+    messages[3]!.toolUses[0]!.tool_use_id = 'fjc_1';
+    messages[4]!.toolResults![0]!.tool_use_id = 'fjc_1';
+
+    const calls = collectToolCalls(messages, 0);
+    const decisions = [
+      decideCall(calls[0]!, { keepCall: 0.9, keepResult: 0.1 }, { keepThreshold: 0.5 }),
+      decideCall(calls[1]!, { keepCall: 0.9, keepResult: 0.9 }, { keepThreshold: 0.5 }),
+    ];
+    const compacted = applyDecisions(messages, decisions, calls, 300);
+    const out = toSessionMessages(messages, compacted);
+
+    expect(out[1]?.toolUses[0]?.tool_use_id).toBe('fjc_2');
+    expect(out[2]?.toolResults?.[0]?.tool_use_id).toBe('fjc_2');
+    expect(out[1]?.toolUses[0]?.tool_use_id).toMatch(/^[a-zA-Z0-9_-]+$/);
+    expect(out[2]?.toolResults?.[0]?.tool_use_id).toMatch(/^[a-zA-Z0-9_-]+$/);
+    expect(out[1]?.toolUses[0]?.result).toEqual({ agent: 'record' });
+    expect(out[2]?.toolResults?.[0]?.result).toEqual({ output: 'record' });
+    expect(out[1]?.handle).toBeUndefined();
+    expect(out[2]?.handle).toBeUndefined();
+    expect(out[3]).toBe(messages[3]);
+    expect(out[4]).toBe(messages[4]);
+    expect(toSessionMessages(out, out)[1]).toBe(out[1]);
+  });
+
+  it('rejects remapping when the matching message still depends on its engine handle', () => {
+    const messages = transcript();
+    const nonPortableId = 'Agent:0#unsafe';
+    messages[1]!.toolUses[0]!.tool_use_id = nonPortableId;
+    messages[2]!.toolResults![0]!.tool_use_id = nonPortableId;
+    const rebuiltCall: Message = {
+      role: messages[1]!.role,
+      text: messages[1]!.text,
+      toolUses: messages[1]!.toolUses.map((tool) => ({ ...tool })),
+    };
+    const output = [messages[0]!, rebuiltCall, ...messages.slice(2)];
+
+    expect(() => toSessionMessages(messages, output)).toThrow(/engine handle/);
+  });
 });
 
 describe('compactSession', () => {

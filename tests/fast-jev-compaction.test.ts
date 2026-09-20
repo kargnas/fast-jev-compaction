@@ -9,6 +9,8 @@ import {
   decideCall,
   estimateTokens,
   fitState,
+  goalFromMessages,
+  isMachineText,
   JevClient,
   parseJevResponse,
   reductionBound,
@@ -144,6 +146,22 @@ describe('state fitting', () => {
     const { state } = fitState(transcript(), [], { ...fit, goal: '' });
     expect(state.goal).toContain('Fix the failing test');
     expect(state.goal).toContain('go ahead');
+  });
+
+  it('leaves host-written user text out of the goal', () => {
+    const messages = [
+      ...transcript(),
+      message('user', '<command-name>/compact</command-name>\n<command-message>compact</command-message>'),
+      message('user', '<local-command-stdout>Compacted </local-command-stdout>'),
+      message('user', '<task-notification>\n<task-id>abc</task-id>\n<status>completed</status>\n</task-notification>'),
+      message('user', 'This session is being continued from a previous conversation that ran out of context. Summary: …'),
+      message('user', '  <system-reminder>files changed</system-reminder>'),
+    ];
+    expect(goalFromMessages(messages)).toBe(
+      'Never edit anything under src/generated. Fix the failing test.\ngo ahead',
+    );
+    expect(isMachineText('<bash-stdout>ok</bash-stdout>')).toBe(true);
+    expect(isMachineText('what does <command-name> do?')).toBe(false);
   });
 
   it('truncates tool inputs before touching message text', () => {

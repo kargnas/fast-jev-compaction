@@ -215,14 +215,38 @@ function historyEntries(
   return entries;
 }
 
-/** The last three user prompts, as the default `goal`. */
+/**
+ * Prefixes of user-role text the host writes rather than the user: command
+ * echoes, subagent and task notifications, injected reminders, and the
+ * summary a previous built-in compaction left behind.
+ */
+const MACHINE_TEXT_PREFIXES = [
+  '<command-name>',
+  '<command-message>',
+  '<local-command-',
+  '<task-notification>',
+  '<system-reminder>',
+  '<bash-input>',
+  '<bash-stdout>',
+  '<bash-stderr>',
+  'This session is being continued from a previous conversation',
+] as const;
+
+/** Whether a user-role text was written by the host, not typed by the user. */
+export function isMachineText(text: string): boolean {
+  const head = text.trimStart();
+  return MACHINE_TEXT_PREFIXES.some((prefix) => head.startsWith(prefix));
+}
+
+/** The last three prompts the user typed, as the default `goal`. */
 export function goalFromMessages(messages: readonly Message[]): string {
   return messages
     .filter(
       (message) =>
         message.role === 'user' &&
         message.text.trim().length > 0 &&
-        (message.toolResults ?? []).length === 0,
+        (message.toolResults ?? []).length === 0 &&
+        !isMachineText(message.text),
     )
     .slice(-3)
     .map((message) => truncate(message.text, 500))

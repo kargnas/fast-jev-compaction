@@ -21,6 +21,7 @@ export const DEFAULT_OPTIONS: ResolvedCompactOptions = {
   maxStateTokens: 25_000,
   maxRequestTokens: 30_000,
   truncateHeadChars: 300,
+  keepUnscored: false,
 };
 
 /** Tokens the request envelope (`model`, key names) adds around state and questions. */
@@ -49,6 +50,7 @@ export function resolveOptions(options: CompactOptions = {}): ResolvedCompactOpt
       0,
       Math.floor(finite(options.truncateHeadChars, DEFAULT_OPTIONS.truncateHeadChars)),
     ),
+    keepUnscored: options.keepUnscored ?? DEFAULT_OPTIONS.keepUnscored,
   };
 }
 
@@ -243,6 +245,20 @@ export function reductionRatio(result: Pick<CompactResult, 'stats'>): number {
   return charsBefore === 0 ? 0 : (charsBefore - charsAfter) / charsBefore;
 }
 
+/** The reduction dropping every candidate would give: the most a round can free. */
+export function reductionBound(result: Pick<CompactResult, 'stats'>): number {
+  const { charsBefore, candidateChars } = result.stats;
+  return charsBefore === 0 ? 0 : candidateChars / charsBefore;
+}
+
+function inputChars(call: Pick<ToolCall, 'input'>): number {
+  try {
+    return JSON.stringify(call.input).length;
+  } catch {
+    return 20;
+  }
+}
+
 function count(decisions: readonly CallDecision[], reason: CallDecision['reason']): number {
   return decisions.filter((decision) => decision.reason === reason).length;
 }
@@ -265,7 +281,11 @@ export async function compact(
   const candidates = calls.filter((call) => !call.pinned);
   const charsBefore = messages.reduce((sum, message) => sum + messageChars(message), 0);
 
-  let fitted: { tokens: number; stage: string } = { tokens: 0, stage: '' };
+  let fitted: { tokens: number; stage: string; visible: Set<string> } = {
+    tokens: 0,
+    stage: '',
+    visible: new Set(),
+  };
   let batches: ToolCall[][] = [];
   const answers = new Map<string, CallAnswer>();
   if (candidates.length > 0) {
@@ -278,9 +298,14 @@ export async function compact(
     for (const map of answered) for (const [id, answer] of map) answers.set(id, answer);
   }
 
-  const decisions = calls.map((call) =>
-    decideCall(call, answers.get(call.id) ?? { keepCall: 1, keepResult: 1 }, resolved),
-  );
+  const unscored = candidates.filter((call) => !fitted.visible.has(call.id));
+  const decisions = calls.map((call) => {
+    const answer = answers.get(call.id) ?? { keepCall: 1, keepResult: 1 };
+    if (resolved.keepUnscored && !call.pinned && !fitted.visible.has(call.id)) {
+      return { id: call.id, tool: call.tool, ...answer, action: 'keep' as const, reason: 'unscored' as const };
+    }
+    return decideCall(call, answer, resolved);
+  });
   const kept = applyDecisions(
     messages,
     decisions,
@@ -300,6 +325,11 @@ export async function compact(
       resultsDropped: count(decisions, 'result_dropped'),
       callsDropped: count(decisions, 'call_dropped'),
       pinned: count(decisions, 'pinned'),
+      candidateChars: candidates.reduce(
+        (sum, call) => sum + inputChars(call) + call.resultChars,
+        0,
+      ),
+      unscored: unscored.length,
       stateTokens: fitted.tokens,
       stateStage: fitted.stage,
       requests: batches.length,

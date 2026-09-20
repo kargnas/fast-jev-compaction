@@ -138,6 +138,17 @@ function mergeCallRuns(history: readonly HistoryEntry[], pinned: (e: HistoryEntr
   return merged;
 }
 
+/** Ids of the calls a history still carries in structured form. */
+function visibleCalls(history: readonly HistoryEntry[]): Set<string> {
+  const visible = new Set<string>();
+  for (const entry of history) {
+    for (const call of entry.tool_calls ?? []) {
+      if (typeof call !== 'string') visible.add(call.id);
+    }
+  }
+  return visible;
+}
+
 function callsByMessage(calls: readonly ToolCall[]): Map<number, ToolCall[]> {
   const byMessage = new Map<number, ToolCall[]>();
   for (const call of calls) {
@@ -209,6 +220,7 @@ export function fitState(
     state: stateOf(history),
     tokens,
     stage,
+    visible: visibleCalls(history),
   });
 
   let history: HistoryEntry[] = [];

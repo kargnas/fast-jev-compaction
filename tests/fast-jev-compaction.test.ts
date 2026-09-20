@@ -11,6 +11,7 @@ import {
   fitState,
   JevClient,
   parseJevResponse,
+  reductionBound,
   reductionRatio,
   resolveOptions,
   type HistoryToolCall,
@@ -181,6 +182,9 @@ describe('state fitting', () => {
       't1 Read file_path=/repo/src/module-0.ts → ok 1ch',
     );
     expect(compacted.state.history.at(-1)?.text).toBe('done');
+    expect(full.visible.size).toBe(40);
+    expect(compacted.visible.has('t1')).toBe(false);
+    expect(compacted.visible.size).toBeLessThan(40);
 
     const merged = fitState(messages, calls, {
       ...fit,
@@ -377,6 +381,33 @@ describe('compact', () => {
     const output = await compact(transcript(), fakeJev(() => 0.95), { preserveRecentMessages: 1 });
     expect(output.decisions.every((d) => d.action === 'keep')).toBe(true);
     expect(reductionRatio(output)).toBe(0);
+  });
+
+  it('reports what dropping every candidate would free, separately from what was freed', async () => {
+    const kept = await compact(transcript(), fakeJev(() => 0.95), { preserveRecentMessages: 1 });
+    const dropped = await compact(transcript(), fakeJev(() => 0), { preserveRecentMessages: 1 });
+    expect(kept.stats.candidateChars).toBe(dropped.stats.candidateChars);
+    expect(reductionBound(kept)).toBeGreaterThanOrEqual(reductionRatio(dropped));
+    expect(reductionBound(kept) - reductionRatio(dropped)).toBeLessThan(0.1);
+    expect(reductionBound(kept)).toBeGreaterThan(reductionRatio(kept));
+  });
+
+  it('counts candidates the fitted state no longer shows, and keeps them on request', async () => {
+    const messages = [message('user', 'start')];
+    for (let i = 0; i < 40; i += 1) {
+      messages.push(call(`c${i}`, 'Read', { file_path: `/repo/src/module-${i}.ts` }, 'x'), result(`c${i}`, 'x'));
+    }
+    messages.push(message('assistant', 'done'));
+    const full = fitState(messages, collectToolCalls(messages, 1), { ...fit, preserveRecentMessages: 1 });
+    const tight = { preserveRecentMessages: 1, maxStateTokens: Math.floor(full.tokens * 0.8) };
+    const applied = await compact(messages, fakeJev(() => 0), tight);
+    expect(applied.stats.stateStage).toBe('old calls compacted');
+    expect(applied.stats.unscored).toBeGreaterThan(0);
+    expect(applied.stats.callsDropped).toBe(40);
+    const held = await compact(messages, fakeJev(() => 0), { ...tight, keepUnscored: true });
+    expect(held.stats.unscored).toBe(applied.stats.unscored);
+    expect(held.decisions.filter((d) => d.reason === 'unscored')).toHaveLength(held.stats.unscored);
+    expect(held.stats.callsDropped).toBe(40 - held.stats.unscored);
   });
 
   it('rejects malformed answers', async () => {

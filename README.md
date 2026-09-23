@@ -1,8 +1,9 @@
 # fast-jev-compaction
 
 Claude Code plugin that replaces the compaction summary with Jev decisions:
-every tool call and result is scored in one fast request, stale ones are
-dropped or truncated, and kept content stays verbatim. The Claude Code adapter
+old tool calls and their still-full results are scored in fast requests;
+stale ones are dropped or truncated, and kept content stays verbatim. Old host
+notices can also be shortened to a head and note. The Claude Code adapter
 only remaps non-portable internal tool IDs when it must rebuild a message. Also
 usable as an npm library.
 
@@ -10,10 +11,11 @@ usable as an npm library.
 
 Most context compaction asks an LLM to summarize old turns. A summary is
 lossy: a file path, exact error, constraint, or command can disappear even when
-it matters later. This library never rewrites anything. It only deletes tool
-calls and tool results Jev says are no longer needed, and it asks Jev while
-showing it the whole conversation. User and assistant text stays verbatim and
-in order.
+it matters later. This library removes tool calls and shortens tool results Jev
+says are no longer needed, and it asks Jev while showing it the conversation.
+Human-written user and assistant text stays verbatim and in order. Old host
+notices under the user role can be shortened; earlier compaction summaries stay
+whole.
 
 The repository is both an npm package (`src/`) and a Claude Code plugin
 (`hooks/`, `.claude-plugin/`) that uses the package to replace Claude Code's
@@ -37,10 +39,11 @@ built-in compaction summary with the original messages.
    does not fit, compaction throws. Tokens are estimated without a tokenizer (a
    word per six letters, half a token per digit, ~one per other symbol),
    calibrated to land a little above the counts Jev reports.
-4. For every non-pinned call Jev gets two `noul` questions: should the **call**
-   stay (knowing it was made, with its input, still matters), and should the
-   **result** stay verbatim (its contents are still needed and re-running the
-   tool would not do).
+4. For every non-pinned call Jev gets a `noul` question about whether the
+   **call** should stay (knowing it was made, with its input, still matters).
+   A result that has not already been truncated gets a second question about
+   whether its full contents must stay verbatim. An earlier round's truncated
+   result is not asked about again; its call can still be removed.
 5. Questions are split into as many requests as needed so state plus questions
    stays under `maxRequestTokens` (30k by default, under Jev's 32k request
    limit). The same full state is resent with every request; requests run
@@ -52,7 +55,9 @@ built-in compaction summary with the original messages.
    - else → remove the call together with its result.
 7. The message list is rebuilt: a message that loses all its content is
    removed, untouched messages are returned as the same objects, and no result
-   is ever left without its call.
+   is ever left without its call. Long old host notices are shortened to their
+   first `truncateHeadChars` characters plus a note; human-written text and
+   earlier compaction summaries stay whole.
 8. In the Claude Code adapter, rebuilt messages use collision-free portable IDs
    for any tool call ID outside `[a-zA-Z0-9_-]`; every matching result reference
    receives the same ID. Untouched engine messages keep their opaque handles.
@@ -70,7 +75,7 @@ export TYPESAFE_API_KEY=...
 ```
 
 ```ts
-import { compactMessages, reductionRatio, type Message } from 'fast-jev-compaction';
+import { compactMessages, reductionBound, reductionRatio, type Message } from 'fast-jev-compaction';
 
 const transcript: Message[] = [
   { role: 'user', text: 'Fix the failing test. Never edit src/generated.', toolUses: [] },
@@ -85,9 +90,7 @@ const transcript: Message[] = [
 
 const result = await compactMessages(transcript, { preserveRecentMessages: 4 });
 console.log(result.messages, result.decisions, result.stats);
-if (reductionRatio(result) < 0.25) {
-  // not worth it: keep the original transcript, or summarize instead
-}
+console.log(reductionRatio(result), reductionBound(result));
 ```
 
 `Message` is a subset of Claude Code's `SessionMessage`, so a session transcript
@@ -115,16 +118,23 @@ put it in a source file.
 | `preserveRecentMessages` | `6` | Newest messages never touched (the first is always kept) |
 | `maxStateTokens` | `25000` | Estimated token ceiling for the state |
 | `maxRequestTokens` | `30000` | Estimated ceiling for state plus one batch of questions |
-| `truncateHeadChars` | `300` | Characters of a dropped tool result retained before its note |
+| `truncateHeadChars` | `300` | Characters retained before the note when a tool result or old host notice is truncated |
+| `keepUnscored` | `false` | Keep calls no longer shown in structured form in the fitted Jev state instead of applying Jev's answer about them |
 
 `result.stats` reports message and character counts before and after, the
-per-reason decision counts, the state size in estimated tokens, which fitting
-stage was needed, and the number of requests.
+per-reason decision counts, candidate characters, calls absent from the fitted
+state, shortened host notices, the state size in estimated tokens, which fitting
+stage was needed, and the number of requests. `reductionRatio(result)` reports
+the actual character reduction; `reductionBound(result)` reports the fraction
+that dropping every candidate could remove.
 
 ## Limitations
 
-- Only tool calls and results are candidates; text messages are never removed
-  or shortened in the output (they are only abridged in the state Jev sees).
+- Tool calls, results, and old host notices are candidates. Human-written user
+  and assistant text is never removed or shortened in the output (it can be
+  abridged in the state Jev sees). Earlier compaction summaries remain whole.
+- Old host notices are shortened by rule without a Jev decision; the omitted
+  content remains in Claude Code's session transcript.
 - Token sizes are estimates from character counts, not a tokenizer.
 - Calibration is at the request level; a probability is not a proof that a
   result is safe to delete. The assistant can always re-run the tool.
@@ -135,9 +145,10 @@ stage was needed, and the number of requests.
 
 The repository root is a Claude Code function-hook plugin: `hooks/fast-jev.ts`
 is a thin adapter that feeds `session.compact` transcripts through `src/` and
-falls back to Claude Code's built-in summary on errors or insufficient
-reduction. See [`hooks/README.md`](hooks/README.md) for configuration and the
-Claude Code 2.1.274 type reference.
+falls back to Claude Code's built-in summary on errors or when the estimated
+remaining context still meets the compaction trigger. See
+[`hooks/README.md`](hooks/README.md) for configuration and the Claude Code
+2.1.274 type reference.
 
 ### Install in Claude Code
 
@@ -161,8 +172,8 @@ The install prompts for the plugin options (API key, thresholds, `truncateHeadCh
 Restart Claude Code or run `/reload-plugins`. From then on `/compact` (and
 auto-compaction) goes through Jev: the toast reads
 `fast-jev-compaction: kept N/M messages, no summary (…)` when the pruned history
-replaced the built-in summary, or `fallback to built-in summary (…)` when Jev
-could not remove enough (short sessions, or when it fails).
+replaced the built-in summary, or `fallback to built-in summary (…)` when the
+estimated remaining context is at or above `compactAtPercent` or Jev fails.
 
 To run from a checkout without installing: `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --plugin-dir .`
 from the repository root. No publishing step is required; the marketplace is

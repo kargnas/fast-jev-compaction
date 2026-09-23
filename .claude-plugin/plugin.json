@@ -13,7 +13,7 @@
     "keepThreshold": {
       "type": "number",
       "title": "Keep threshold",
-      "description": "Minimum Jev probability that a tool call or tool result is still needed; below it the item is removed.",
+      "description": "Minimum Jev probability to keep a tool call or full result; a rejected result is truncated when its call stays.",
       "default": 0.5
     },
     "preserveRecentMessages": {
@@ -25,13 +25,13 @@
     "compactAtPercent": {
       "type": "number",
       "title": "Compaction percentage",
-      "description": "Context percentage at which turn.complete requests compaction.",
+      "description": "Context percentage at which turn.complete requests compaction and low-reduction results require a built-in summary.",
       "default": 60
     },
     "minReductionRatio": {
       "type": "number",
       "title": "Minimum reduction ratio",
-      "description": "Minimum estimated character reduction required to replace history.",
+      "description": "Target character reduction. Below it, use the built-in summary only when estimated context usage remains at or above the compaction threshold.",
       "default": 0.25
     },
     "maxStateTokens": {
@@ -48,9 +48,15 @@
     },
     "truncateHeadChars": {
       "type": "number",
-      "title": "Truncated tool result head",
-      "description": "Characters of a tool result kept when Jev decides its full output is no longer needed; 0 keeps only the note.",
+      "title": "Truncated content head",
+      "description": "Characters retained before the note when a tool result or old host notice is truncated; short content stays whole.",
       "default": 300
+    },
+    "keepUnscored": {
+      "type": "boolean",
+      "title": "Keep calls outside structured state",
+      "description": "Keep calls the fitted Jev state no longer shows in structured form instead of applying Jev's answer about them.",
+      "default": false
     },
     "model": {
       "type": "string",

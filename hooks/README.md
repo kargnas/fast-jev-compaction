@@ -6,13 +6,16 @@ needed. `hooks/fast-jev.ts` is a thin adapter: it reads the plugin options,
 finds the TypeSafe key, hands `session.compact` transcripts to the
 `fast-jev-compaction` library in `src/` (the plugin folder is the repository
 root, so the hook imports it directly) and maps the result back onto session
-messages. User and assistant text is never touched. Jev is sent the whole
-conversation as `state` (tool outputs replaced by a one-line note) and, for
-every tool call outside the pinned first and newest messages, two questions:
-whether the call should stay and whether its full output should stay. An
-item is kept when Jev's probability reaches `keepThreshold`; a dropped result
-is truncated to its first `truncateHeadChars` characters plus a one-line note,
-and a dropped call disappears with its result.
+messages. Human-written user and assistant text is never touched. Long old
+host notices under the user role are shortened to a head and note by rule;
+earlier compaction summaries stay whole. Jev is sent a fitted conversation
+`state` (tool outputs replaced by a one-line note) and, for every tool call
+outside the pinned first and newest messages, a question about whether the
+call should stay. It also asks whether the full output should stay unless an
+earlier round already truncated that output. An item is kept when Jev's
+probability reaches `keepThreshold`; a dropped result is truncated to its
+first `truncateHeadChars` characters plus a one-line note, and a dropped call
+disappears with its result.
 
 The state is fitted into `maxStateTokens` in stages: tool inputs are
 truncated, then long texts are abridged (oldest first, pinned messages last),
@@ -55,6 +58,7 @@ The plugin declares these `userConfig` values in
 | `maxStateTokens` | `25000` |
 | `maxRequestTokens` | `30000` |
 | `truncateHeadChars` | `300` |
+| `keepUnscored` | `false` |
 | `model` | `jev-latest` |
 
 The TypeSafe key can be supplied as the sensitive `apiKey` plugin option or
@@ -63,12 +67,18 @@ development setup.
 
 Every option except `apiKey`, `compactAtPercent`, `minReductionRatio` and
 `model` is passed straight to the library; see the root README for what they
-do. The `session.compact` hook runs the Jev requests concurrently. If Jev fails,
-the response is malformed, the key is unavailable, the history cannot be
-fitted into the state budget, or the estimated reduction is below
-`minReductionRatio`, the hook logs a fallback and delegates to Claude Code's
-built-in compaction. The outcome is shown as a toast and logged with the
-reduction, per-reason counts, state size and request count; a per-call
+do. With `keepUnscored: false`, Jev's answer applies even to calls the fitted
+state no longer shows in structured form. Set it to `true` to preserve those calls.
+The `session.compact` hook runs the Jev requests concurrently. It delegates
+to Claude Code's built-in compaction if Jev fails, the response is malformed,
+the key is unavailable, or the history cannot be fitted into the state budget.
+For a result below `minReductionRatio`, the hook also checks the maximum
+reduction available from candidates and the estimated context usage after
+compaction. It uses the built-in summary when that usage remains at or above
+`compactAtPercent`; otherwise it returns the compacted history, including when
+the candidates could not reach `minReductionRatio`. The outcome is shown as a
+toast and logged with the reduction, per-reason counts, state size and request
+count; a per-call
 `decisions:` line with both probabilities is logged for diagnosis. The
 `turn.complete` hook requests
 compaction when `context.percent` reaches `compactAtPercent`, with an

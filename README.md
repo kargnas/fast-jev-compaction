@@ -157,11 +157,11 @@ opt-in flag must be set wherever Claude Code runs, e.g. in `~/.claude/settings.j
 { "env": { "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1", "TYPESAFE_API_KEY": "<your key>" } }
 ```
 
-Then add this repository as a plugin marketplace and install the plugin,
-either from the shell or as slash commands inside a session:
+From this checkout, add the local directory as a plugin marketplace and install
+the plugin:
 
 ```sh
-claude plugin marketplace add tamaratran/fast-jev-compaction
+claude plugin marketplace add .
 claude plugin install fast-jev-compaction@fast-jev-compaction
 ```
 

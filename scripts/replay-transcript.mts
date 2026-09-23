@@ -143,7 +143,7 @@ const all = rows(file);
 const marks = boundaries(all);
 const config = { minReductionRatio: 0.25, compactAtPercent: 60 };
 console.log(`${file}\n${marks.length} compaction boundaries (${marks.filter((m) => m.kind === 'jev').length} jev)\n`);
-console.log('round | actual  | msgs | chars   | text% | cands | bound | reduction | unscored | notices | stage                  | new verdict');
+console.log('round | actual  | msgs | chars   | text% | cands | bound | reduction | unscored | stage                  | new verdict');
 let previous: Boundary | undefined;
 let round = 0;
 for (const mark of marks) {
@@ -161,7 +161,7 @@ for (const mark of marks) {
     const chars = result.stats.charsBefore;
     const textChars = messages.reduce((s, m) => s + m.text.length, 0);
     const out = verdict(result, config, undefined);
-    line = `${String(messages.length).padStart(4)} | ${String(chars).padStart(7)} | ${String(Math.round((100 * textChars) / chars)).padStart(4)}% | ${String(result.stats.calls - result.stats.pinned).padStart(5)} | ${(100 * reductionBound(result)).toFixed(0).padStart(4)}% | ${(100 * reductionRatio(result)).toFixed(0).padStart(8)}% | ${String(result.stats.unscored).padStart(8)} | ${String(result.stats.noticesTruncated).padStart(7)} | ${result.stats.stateStage.padEnd(22)} | ${out.kind}`;
+    line = `${String(messages.length).padStart(4)} | ${String(chars).padStart(7)} | ${String(Math.round((100 * textChars) / chars)).padStart(4)}% | ${String(result.stats.calls - result.stats.pinned).padStart(5)} | ${(100 * reductionBound(result)).toFixed(0).padStart(4)}% | ${(100 * reductionRatio(result)).toFixed(0).padStart(8)}% | ${String(result.stats.unscored).padStart(8)} | ${result.stats.stateStage.padEnd(22)} | ${out.kind}`;
   } catch (error) {
     line = `${String(messages.length).padStart(4)} | throws: ${(error as Error).message}`;
   }

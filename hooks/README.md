@@ -6,10 +6,9 @@ needed. `hooks/fast-jev.ts` is a thin adapter: it reads the plugin options,
 finds the TypeSafe key, hands `session.compact` transcripts to the
 `fast-jev-compaction` library in `src/` (the plugin folder is the repository
 root, so the hook imports it directly) and maps the result back onto session
-messages. Human-written user and assistant text is never touched. Long old
-host notices under the user role are shortened to a head and note by rule;
-earlier compaction summaries stay whole. Jev is sent a fitted conversation
-`state` (tool outputs replaced by a one-line note) and, for every tool call
+messages. User and assistant message text is never touched. Earlier compaction
+summaries stay whole. Jev is sent a fitted conversation `state` (tool outputs
+replaced by a one-line note) and, for every tool call
 outside the pinned first and newest messages, a question about whether the
 call should stay. It also asks whether the full output should stay unless an
 earlier round already truncated that output. An item is kept when Jev's

@@ -49,7 +49,7 @@
     "truncateHeadChars": {
       "type": "number",
       "title": "Truncated content head",
-      "description": "Characters retained before the note when a tool result or old host notice is truncated; short content stays whole.",
+      "description": "Characters retained before the note when a tool result is truncated; short content stays whole.",
       "default": 300
     },
     "keepUnscored": {

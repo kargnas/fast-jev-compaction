@@ -216,11 +216,10 @@ function historyEntries(
 }
 
 /**
- * Prefixes of user-role text the host writes rather than the user: command
- * echoes, subagent and task notifications, injected reminders, and the
- * summary a previous built-in compaction left behind.
+ * Common host message prefixes. A user can paste the same text, so use these
+ * only to choose a likely task goal, never to discard transcript content.
  */
-const MACHINE_TEXT_PREFIXES = [
+const HOST_TEXT_PREFIXES = [
   '<command-name>',
   '<command-message>',
   '<local-command-',
@@ -232,13 +231,13 @@ const MACHINE_TEXT_PREFIXES = [
   'This session is being continued from a previous conversation',
 ] as const;
 
-/** Whether a user-role text was written by the host, not typed by the user. */
-export function isMachineText(text: string): boolean {
+/** Whether user-role text begins with a common host message prefix. */
+export function hasHostTextPrefix(text: string): boolean {
   const head = text.trimStart();
-  return MACHINE_TEXT_PREFIXES.some((prefix) => head.startsWith(prefix));
+  return HOST_TEXT_PREFIXES.some((prefix) => head.startsWith(prefix));
 }
 
-/** The last three prompts the user typed, as the default `goal`. */
+/** The last three user-role texts without host prefixes, as the default `goal`. */
 export function goalFromMessages(messages: readonly Message[]): string {
   return messages
     .filter(
@@ -246,7 +245,7 @@ export function goalFromMessages(messages: readonly Message[]): string {
         message.role === 'user' &&
         message.text.trim().length > 0 &&
         (message.toolResults ?? []).length === 0 &&
-        !isMachineText(message.text),
+        !hasHostTextPrefix(message.text),
     )
     .slice(-3)
     .map((message) => truncate(message.text, 500))

@@ -2,10 +2,9 @@
 
 Claude Code plugin that replaces the compaction summary with Jev decisions:
 old tool calls and their still-full results are scored in fast requests;
-stale ones are dropped or truncated, and kept content stays verbatim. Old host
-notices can also be shortened to a head and note. The Claude Code adapter
-only remaps non-portable internal tool IDs when it must rebuild a message. Also
-usable as an npm library.
+stale ones are dropped or truncated, and kept content stays verbatim. The Claude
+Code adapter only remaps non-portable internal tool IDs when it must rebuild a
+message. Also usable as an npm library.
 
 ## What and why
 
@@ -13,9 +12,8 @@ Most context compaction asks an LLM to summarize old turns. A summary is
 lossy: a file path, exact error, constraint, or command can disappear even when
 it matters later. This library removes tool calls and shortens tool results Jev
 says are no longer needed, and it asks Jev while showing it the conversation.
-Human-written user and assistant text stays verbatim and in order. Old host
-notices under the user role can be shortened; earlier compaction summaries stay
-whole.
+User and assistant message text stays verbatim and in order. Earlier compaction
+summaries stay whole.
 
 The repository is both an npm package (`src/`) and a Claude Code plugin
 (`hooks/`, `.claude-plugin/`) that uses the package to replace Claude Code's
@@ -56,10 +54,8 @@ built-in compaction summary with the original messages.
 7. The message list is rebuilt: a message that loses all its content is
    removed. Empty assistant messages without an engine handle are removed too;
    handled messages may contain hidden blocks and stay intact. Other untouched
-   messages retain their objects, and no result is left without its call. Long
-   old host notices are shortened to their first `truncateHeadChars` characters
-   plus a note; human-written text and
-   earlier compaction summaries stay whole.
+   messages retain their objects, and no result is left without its call. User
+   and assistant message text and earlier compaction summaries stay whole.
 8. In the Claude Code adapter, rebuilt messages use collision-free portable IDs
    for any tool call ID outside `[a-zA-Z0-9_-]`; every matching result reference
    receives the same ID. Untouched engine messages keep their opaque handles.
@@ -115,28 +111,28 @@ put it in a source file.
 | `model` | `jev-latest` | Jev model name |
 | `baseUrl` | `https://api.typesafe.ai/v1/systemone` | System One endpoint |
 | `fetch` | native `fetch` | Injectable fetch implementation for tests |
-| `goal` | last 3 user prompts | Ongoing task description included in the state |
+| `goal` | last 3 user-role texts without common host prefixes | Ongoing task description included in the state |
 | `keepThreshold` | `0.5` | Minimum keep probability for a call or result to stay |
 | `preserveRecentMessages` | `6` | Newest messages never touched (the first is always kept) |
 | `maxStateTokens` | `25000` | Estimated token ceiling for the state |
 | `maxRequestTokens` | `30000` | Estimated ceiling for state plus one batch of questions |
-| `truncateHeadChars` | `300` | Characters retained before the note when a tool result or old host notice is truncated |
+| `truncateHeadChars` | `300` | Characters retained before the note when a tool result is truncated |
 | `keepUnscored` | `false` | Keep calls no longer shown in structured form in the fitted Jev state instead of applying Jev's answer about them |
 
 `result.stats` reports message and character counts before and after, the
 per-reason decision counts, candidate characters, calls absent from the fitted
-state, shortened host notices, the state size in estimated tokens, which fitting
-stage was needed, and the number of requests. `reductionRatio(result)` reports
+state, the state size in estimated tokens, which fitting stage was needed, and
+the number of requests. `reductionRatio(result)` reports
 the actual character reduction; `reductionBound(result)` reports the fraction
 that dropping every candidate could remove.
 
 ## Limitations
 
-- Tool calls, results, and old host notices are candidates. Human-written user
-  and assistant text is never removed or shortened in the output (it can be
-  abridged in the state Jev sees). Earlier compaction summaries remain whole.
-- Old host notices are shortened by rule without a Jev decision; the omitted
-  content remains in Claude Code's session transcript.
+- Tool calls and results are candidates. User and assistant message text is never
+  removed or shortened in the output (it can be abridged in the state Jev sees).
+  Earlier compaction summaries remain whole.
+- Automatic goal selection uses host-like prefixes as a heuristic. Pasted text
+  with the same prefix can be absent from the goal, but remains in the returned messages.
 - Token sizes are estimates from character counts, not a tokenizer.
 - Calibration is at the request level; a probability is not a proof that a
   result is safe to delete. The assistant can always re-run the tool.

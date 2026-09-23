@@ -149,8 +149,6 @@ export interface CompactResult {
     candidateChars: number;
     /** Candidates the fitted state no longer showed structured when they were scored. */
     unscored: number;
-    /** Host notices under the user role cut to a head by rule. */
-    noticesTruncated: number;
     stateTokens: number;
     /** Which fitting stage the state needed, '' when no request was made. */
     stateStage: string;

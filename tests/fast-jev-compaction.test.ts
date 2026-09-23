@@ -10,7 +10,7 @@ import {
   estimateTokens,
   fitState,
   goalFromMessages,
-  isMachineText,
+  hasHostTextPrefix,
   JevClient,
   parseJevResponse,
   reductionBound,
@@ -160,8 +160,8 @@ describe('state fitting', () => {
     expect(goalFromMessages(messages)).toBe(
       'Never edit anything under src/generated. Fix the failing test.\ngo ahead',
     );
-    expect(isMachineText('<bash-stdout>ok</bash-stdout>')).toBe(true);
-    expect(isMachineText('what does <command-name> do?')).toBe(false);
+    expect(hasHostTextPrefix('<bash-stdout>ok</bash-stdout>')).toBe(true);
+    expect(hasHostTextPrefix('what does <command-name> do?')).toBe(false);
   });
 
   it('truncates tool inputs before touching message text', () => {
@@ -452,32 +452,13 @@ describe('compact', () => {
     );
   });
 
-  it('cuts host notices under the user role to a head by rule, and leaves prompts and summaries whole', async () => {
-    const notice = `<task-notification>\n<task-id>abc</task-id>\n<status>completed</status>\n<result>${'x'.repeat(2000)}</result>\n</task-notification>`;
-    const summary = `This session is being continued from a previous conversation. ${'y'.repeat(2000)}`;
-    const prompt = `please keep every one of these words ${'z'.repeat(2000)}`;
-    const messages = [
-      message('user', 'start'),
-      message('user', notice),
-      message('user', summary),
-      message('user', prompt),
-      message('assistant', 'ok'),
-      message('user', notice),
-    ];
+  it('preserves user text that starts with a host-looking tag', async () => {
+    const pastedLog = `<task-notification>\n${'debug output '.repeat(200)}</task-notification>`;
+    const messages = [message('user', 'inspect this log'), message('user', pastedLog), message('assistant', 'ok')];
     const output = await compact(messages, fakeJev(() => 0), { preserveRecentMessages: 1, truncateHeadChars: 50 });
-    expect(output.stats.noticesTruncated).toBe(1);
-    expect(output.messages[1]?.text).toBe(
-      `${notice.slice(0, 50)}\n[fast-jev-compaction truncated ${notice.length - 50} chars of this host notice; the full text is in the session transcript]`,
-    );
-    expect(output.messages[2]).toBe(messages[2]);
-    expect(output.messages[3]).toBe(messages[3]);
-    expect(output.messages[5]).toBe(messages[5]);
-    expect(output.stats.candidateChars).toBe(notice.length - 50);
-    expect(reductionRatio(output)).toBeGreaterThan(0.2);
-
-    const again = await compact(output.messages, fakeJev(() => 0), { preserveRecentMessages: 1, truncateHeadChars: 50 });
-    expect(again.stats.noticesTruncated).toBe(0);
-    expect(again.messages[1]).toBe(output.messages[1]);
+    expect(output.messages[1]).toBe(messages[1]);
+    expect(output.messages[1]?.text).toBe(pastedLog);
+    expect(output.stats.candidateChars).toBe(0);
   });
 
   it('counts candidates the fitted state no longer shows, and keeps them on request', async () => {

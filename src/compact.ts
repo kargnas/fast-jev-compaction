@@ -1,5 +1,5 @@
 import { noulAnswer } from './request.js';
-import { collectToolCalls, estimateTokens, fitState, isMachineText, isPinned } from './state.js';
+import { collectToolCalls, estimateTokens, fitState } from './state.js';
 import type {
   CallAnswer,
   CallDecision,
@@ -148,46 +148,6 @@ function truncatedResultText(text: string, isError: boolean, headChars: number):
   return `${head}[fast-jev-compaction truncated ${text.length - headChars} chars of this tool result${
     isError ? ' (error)' : ''
   }; re-run the tool if needed]`;
-}
-
-const NOTICE_NOTE_START = '[fast-jev-compaction truncated ';
-const NOTICE_NOTE_END = ' chars of this host notice; the full text is in the session transcript]';
-
-/**
- * Host notices (task notifications, command echoes, reminders) are written
- * under the user role but are not the user's words. Outside the pinned messages
- * they keep a head and a note pointing to the session transcript; no question
- * is asked. A previous compaction's summary is machine text too, but it is the
- * only copy of what it summarised,
- * so it stays whole.
- */
-export function truncateHostNotices(
-  messages: readonly Message[],
-  options: Pick<ResolvedCompactOptions, 'preserveRecentMessages' | 'truncateHeadChars'>,
-): { messages: Message[]; truncated: number; charsCut: number } {
-  let truncated = 0;
-  let charsCut = 0;
-  const headChars = options.truncateHeadChars;
-  const out = messages.map((message, index) => {
-    if (message.role !== 'user' || (message.toolResults ?? []).length > 0) return message;
-    if (isPinned(index, messages.length, options.preserveRecentMessages)) return message;
-    if (!isMachineText(message.text) || message.text.trimStart().startsWith('This session is being continued')) {
-      return message;
-    }
-    if (message.text.length <= headChars + 120 || message.text.trimEnd().endsWith(NOTICE_NOTE_END)) {
-      return message;
-    }
-    const cut = message.text.length - headChars;
-    truncated += 1;
-    charsCut += cut;
-    const head = headChars > 0 ? `${message.text.slice(0, headChars)}\n` : '';
-    return {
-      role: message.role,
-      text: `${head}${NOTICE_NOTE_START}${cut}${NOTICE_NOTE_END}`,
-      toolUses: message.toolUses,
-    };
-  });
-  return { messages: out, truncated, charsCut };
 }
 
 /**
@@ -364,11 +324,7 @@ export async function compact(
     }
     return decideCall(call, answer, resolved);
   });
-  const notices = truncateHostNotices(
-    applyDecisions(messages, decisions, calls, resolved.truncateHeadChars),
-    resolved,
-  );
-  const kept = notices.messages;
+  const kept = applyDecisions(messages, decisions, calls, resolved.truncateHeadChars);
   return {
     messages: kept,
     decisions,
@@ -382,11 +338,8 @@ export async function compact(
       resultsDropped: count(decisions, 'result_dropped'),
       callsDropped: count(decisions, 'call_dropped'),
       pinned: count(decisions, 'pinned'),
-      candidateChars:
-        candidates.reduce((sum, call) => sum + inputChars(call) + call.resultChars, 0) +
-        notices.charsCut,
+      candidateChars: candidates.reduce((sum, call) => sum + inputChars(call) + call.resultChars, 0),
       unscored: unscored.length,
-      noticesTruncated: notices.truncated,
       stateTokens: fitted.tokens,
       stateStage: fitted.stage,
       requests: batches.length,

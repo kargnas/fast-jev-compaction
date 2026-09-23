@@ -54,9 +54,11 @@ built-in compaction summary with the original messages.
      first `truncateHeadChars` characters plus a one-line note;
    - else → remove the call together with its result.
 7. The message list is rebuilt: a message that loses all its content is
-   removed, untouched messages are returned as the same objects, and no result
-   is ever left without its call. Long old host notices are shortened to their
-   first `truncateHeadChars` characters plus a note; human-written text and
+   removed. Empty assistant messages without an engine handle are removed too;
+   handled messages may contain hidden blocks and stay intact. Other untouched
+   messages retain their objects, and no result is left without its call. Long
+   old host notices are shortened to their first `truncateHeadChars` characters
+   plus a note; human-written text and
    earlier compaction summaries stay whole.
 8. In the Claude Code adapter, rebuilt messages use collision-free portable IDs
    for any tool call ID outside `[a-zA-Z0-9_-]`; every matching result reference

@@ -77,6 +77,16 @@ describe('hook config', () => {
 });
 
 describe('session message mapping', () => {
+  it('preserves an empty engine message whose handle may contain hidden blocks', () => {
+    const user = message('user', 'start', { handle: 'u' });
+    const hidden = message('assistant', '', { handle: 'thinking' });
+    const plain = message('assistant', '');
+    const input = [user, hidden, plain];
+    const output = toSessionMessages(input, applyDecisions(input, [], [], 300));
+    expect(output).toEqual([user, hidden]);
+    expect(output[1]).toBe(hidden);
+  });
+
   it('returns the engine objects for untouched messages and handle-less copies for rebuilt ones', () => {
     const messages = transcript();
     const calls = collectToolCalls(messages, 0);

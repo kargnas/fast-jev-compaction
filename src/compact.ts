@@ -155,10 +155,10 @@ const NOTICE_NOTE_END = ' chars of this host notice; the full text is in the ses
 
 /**
  * Host notices (task notifications, command echoes, reminders) are written
- * under the user role but are not the user's words, and they are re-derivable
- * from what the assistant did next. Outside the pinned messages they keep a
- * head and a note, by rule; no question is asked. A previous compaction's
- * summary is machine text too, but it is the only copy of what it summarised,
+ * under the user role but are not the user's words. Outside the pinned messages
+ * they keep a head and a note pointing to the session transcript; no question
+ * is asked. A previous compaction's summary is machine text too, but it is the
+ * only copy of what it summarised,
  * so it stays whole.
  */
 export function truncateHostNotices(
@@ -214,6 +214,14 @@ export function applyDecisions(
       message.toolUses.some((tool) => actions.has(tool.tool_use_id)) ||
       (message.toolResults ?? []).some((result) => actions.has(result.tool_use_id));
     if (!touched) {
+      // An engine handle may contain thinking blocks absent from the text projection.
+      if (
+        message.role === 'assistant' &&
+        message.text.trim().length === 0 &&
+        message.toolUses.length === 0 &&
+        (message.toolResults?.length ?? 0) === 0 &&
+        !('handle' in message)
+      ) continue;
       kept.push(message);
       continue;
     }

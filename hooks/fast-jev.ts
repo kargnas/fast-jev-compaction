@@ -377,10 +377,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       ? [
           `**${last.time}** · ${last.line}`,
           ...(last.result
-            ? [
-                `state ~${last.result.stats.stateTokens} tokens (${last.result.stats.stateStage}) in ${last.result.stats.requests} request(s)`,
-                decisionTable(last.result),
-              ]
+            ? [`state stage: ${last.result.stats.stateStage}`, decisionTable(last.result)]
             : []),
         ].join('\n\n')
       : 'No compaction since the plugin loaded.',

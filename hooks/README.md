@@ -1,9 +1,10 @@
 # fast-jev-compaction Claude Code mod
 
-This plugin uses Claude Code function hooks to replace a compaction with the
-original messages, minus the tool calls and tool results Jev judged no longer
-needed. `hooks/fast-jev.ts` is a thin adapter: it reads the plugin options,
-finds the TypeSafe key, hands `session.compact` transcripts to the
+This plugin adds `/compact-jev`, a compaction that keeps the original messages,
+minus the tool calls and tool results Jev judged no longer needed. `/compact`
+and Claude Code's automatic compaction keep the built-in summary.
+`hooks/fast-jev.ts` is a thin adapter: it reads the plugin options, finds the
+TypeSafe key, hands the transcript of a `/compact-jev` compaction to the
 `fast-jev-compaction` library in `src/` (the plugin folder is the repository
 root, so the hook imports it directly) and maps the result back onto session
 messages. User and assistant message text is never touched. Earlier compaction
@@ -68,7 +69,8 @@ Every option except `apiKey`, `compactAtPercent`, `minReductionRatio` and
 `model` is passed straight to the library; see the root README for what they
 do. With `keepUnscored: false`, Jev's answer applies even to calls the fitted
 state no longer shows in structured form. Set it to `true` to preserve those calls.
-The `session.compact` hook runs the Jev requests concurrently. It delegates
+`/compact-jev` runs the built-in `/compact` and claims that compaction: the
+`session.compact` hook handles no other one. It runs the Jev requests concurrently. It delegates
 to Claude Code's built-in compaction if Jev fails, the response is malformed,
 the key is unavailable, or the history cannot be fitted into the state budget.
 For a result below `minReductionRatio`, the hook also checks the maximum
@@ -80,10 +82,7 @@ transcript line with the message counts, the reduction, dropped calls per
 tool, the other per-reason counts, the request count and the state size, and
 pins the latest outcome as the plugin's status line under the prompt. The
 `/fast-jev` command shows the last compaction since the plugin loaded as a
-per-tool table of decisions and Jev's probabilities (min, median, max). The
-`turn.complete` hook requests
-compaction when `context.percent` reaches `compactAtPercent`, with an
-in-flight guard.
+per-tool table of decisions and Jev's probabilities (min, median, max).
 
 ## Scope and caveat
 

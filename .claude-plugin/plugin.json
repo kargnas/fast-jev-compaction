@@ -24,14 +24,14 @@
     },
     "compactAtPercent": {
       "type": "number",
-      "title": "Compaction percentage",
-      "description": "Context percentage at which turn.complete requests compaction and low-reduction results require a built-in summary.",
+      "title": "Built-in summary threshold",
+      "description": "Context percentage at or above which a low-reduction Jev compaction is replaced by the built-in summary.",
       "default": 60
     },
     "minReductionRatio": {
       "type": "number",
       "title": "Minimum reduction ratio",
-      "description": "Target character reduction. Below it, use the built-in summary only when estimated context usage remains at or above the compaction threshold.",
+      "description": "Target character reduction. Below it, use the built-in summary only when estimated context usage remains at or above the built-in summary threshold.",
       "default": 0.25
     },
     "maxStateTokens": {

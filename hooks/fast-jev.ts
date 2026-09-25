@@ -5,7 +5,6 @@ import type {
   SessionMessage,
   ToolResultSummary,
   ToolUseSummary,
-  TurnCompleteInput,
 } from 'claude-code';
 
 import { compact, reductionBound, reductionRatio, resolveOptions } from '../src/compact.js';
@@ -360,7 +359,9 @@ type LastCompaction = { time: string; line: string; result?: CompactResult };
 
 export const register: Register = (on: On, options: PluginOptions) => {
   const configured = resolveHookConfig(options);
-  let compacting = false;
+  // True only while `/compact-jev` waits on its own compaction, so `/compact`,
+  // the engine's auto-compaction and other plugins keep the built-in summary.
+  let requested = false;
   // What `/fast-jev` shows. A module reload runs register again, so it starts empty.
   let last: LastCompaction | undefined;
 
@@ -369,7 +370,29 @@ export const register: Register = (on: On, options: PluginOptions) => {
       name: 'fast-jev',
       description: 'Show the last fast-jev compaction per tool',
     });
+    await $.command.register({
+      name: 'compact-jev',
+      description: 'Compact by dropping tool calls and results Jev judges stale',
+    });
     return next(event);
+  });
+
+  on('command.run', { command: 'compact-jev' }, async ($) => {
+    // A `session.compact` this plugin raises itself (`$.session.compact()`) skips
+    // this plugin's own hook as re-entry, so run the built-in `/compact` and claim
+    // the compaction core raises. `$.command.run` rejects inside the dispatch that
+    // holds the turn; a timer dispatch runs once the command has answered.
+    $.clock.after(0, async () => {
+      requested = true;
+      try {
+        await $.command.run({ command: 'compact' });
+      } catch (error) {
+        $.ui.log(`compaction failed: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        requested = false;
+      }
+    });
+    return { text: 'Compacting through Jev…' };
   });
 
   on('command.run', { command: 'fast-jev' }, async () => ({
@@ -383,7 +406,10 @@ export const register: Register = (on: On, options: PluginOptions) => {
       : 'No compaction since the plugin loaded.',
   }));
 
-  on('session.compact', async ($, event, next) => {
+  // `/compact-jev` runs through the built-in `/compact`, the `manual` trigger;
+  // the matcher keeps a `precompute` that lands meanwhile off Jev.
+  on('session.compact', { trigger: 'manual' }, async ($, event, next) => {
+    if (!requested) return next(event);
     // One transcript row per compaction, and the status line keeps the latest
     // outcome under the prompt until the next one replaces it.
     const report = async (line: string, status: string, result?: CompactResult) => {
@@ -425,23 +451,6 @@ export const register: Register = (on: On, options: PluginOptions) => {
       await report(`fallback to built-in summary: ${reason}`, `built-in summary: ${reason}`);
       return next(event);
     }
-  });
-
-  on('turn.complete', async ($, event: TurnCompleteInput, next) => {
-    if (compacting) return next(event);
-    try {
-      const { context } = await $.session.usage();
-      if ((context.percent ?? 0) < configured.compactAtPercent) return next(event);
-      compacting = true;
-      await $.session.compact();
-    } catch (error) {
-      $.ui.log(
-        `auto-compact skipped (${error instanceof Error ? error.message : String(error)})`,
-      );
-    } finally {
-      compacting = false;
-    }
-    return next(event);
   });
 };
 

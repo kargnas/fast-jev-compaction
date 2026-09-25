@@ -1,6 +1,6 @@
 # fast-jev-compaction
 
-Claude Code plugin that replaces the compaction summary with Jev decisions:
+Claude Code plugin whose `/compact-jev` replaces the compaction summary with Jev decisions:
 old tool calls and their still-full results are scored in fast requests;
 stale ones are dropped or truncated, and kept content stays verbatim. The Claude
 Code adapter only remaps non-portable internal tool IDs when it must rebuild a
@@ -16,8 +16,9 @@ User and assistant message text stays verbatim and in order. Earlier compaction
 summaries stay whole.
 
 The repository is both an npm package (`src/`) and a Claude Code plugin
-(`hooks/`, `.claude-plugin/`) that uses the package to replace Claude Code's
-built-in compaction summary with the original messages.
+(`hooks/`, `.claude-plugin/`) that uses the package for `/compact-jev`, a
+compaction that keeps the original messages instead of Claude Code's built-in
+summary.
 
 ## How it works
 
@@ -142,9 +143,10 @@ that dropping every candidate could remove.
 ## Claude Code plugin
 
 The repository root is a Claude Code function-hook plugin: `hooks/fast-jev.ts`
-is a thin adapter that feeds `session.compact` transcripts through `src/` and
-falls back to Claude Code's built-in summary on errors or when the estimated
-remaining context still meets the compaction trigger. See
+is a thin adapter that registers `/compact-jev`, feeds that compaction's
+transcript through `src/` and falls back to Claude Code's built-in summary on
+errors or when the estimated remaining context stays at or above
+`compactAtPercent`. `/compact` and auto-compaction keep the built-in summary. See
 [`hooks/README.md`](hooks/README.md) for configuration and the Claude Code
 2.1.274 type reference.
 
@@ -167,8 +169,8 @@ claude plugin install fast-jev-compaction@fast-jev-compaction
 
 The install prompts for the plugin options (API key, thresholds, `truncateHeadChars`,
 …); leave them at their defaults to use `TYPESAFE_API_KEY` from the environment.
-Restart Claude Code or run `/reload-plugins`. From then on `/compact` (and
-auto-compaction) goes through Jev. The status line under the prompt reads
+Restart Claude Code or run `/reload-plugins`. From then on `/compact-jev`
+compacts through Jev. The status line under the prompt reads
 `fast-jev-compaction: HH:mm · M→N msgs · -X% · K dropped` when the pruned history
 replaced the built-in summary, or `fast-jev-compaction: HH:mm · built-in summary: …` when the
 estimated remaining context is at or above `compactAtPercent` or Jev fails; the

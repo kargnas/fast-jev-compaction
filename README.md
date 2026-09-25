@@ -168,10 +168,12 @@ claude plugin install fast-jev-compaction@fast-jev-compaction
 The install prompts for the plugin options (API key, thresholds, `truncateHeadChars`,
 …); leave them at their defaults to use `TYPESAFE_API_KEY` from the environment.
 Restart Claude Code or run `/reload-plugins`. From then on `/compact` (and
-auto-compaction) goes through Jev: the toast reads
-`fast-jev-compaction: kept N/M messages, no summary (…)` when the pruned history
-replaced the built-in summary, or `fallback to built-in summary (…)` when the
-estimated remaining context is at or above `compactAtPercent` or Jev fails.
+auto-compaction) goes through Jev. The status line under the prompt reads
+`fast-jev-compaction: HH:mm · M→N msgs · -X% · K dropped` when the pruned history
+replaced the built-in summary, or `fast-jev-compaction: HH:mm · built-in summary: …` when the
+estimated remaining context is at or above `compactAtPercent` or Jev fails; the
+transcript gets one line with the details. `/fast-jev` shows the last
+compaction as a per-tool table.
 
 To run from a checkout without installing: `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude --plugin-dir .`
 from the repository root. No publishing step is required; the marketplace is

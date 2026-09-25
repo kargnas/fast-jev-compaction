@@ -11,6 +11,8 @@ import type {
 import { compact, reductionBound, reductionRatio, resolveOptions } from '../src/compact.js';
 import { buildJevRequest, DEFAULT_MODEL, parseJevResponse } from '../src/request.js';
 import type {
+  CallAction,
+  CallDecision,
   CompactOptions,
   CompactResult,
   JevAsker,
@@ -252,53 +254,75 @@ function percent(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;
 }
 
+/** Scored decisions per tool, most dropped calls first; pinned calls were never asked about. */
+function byTool(result: CompactResult): { tool: string; decisions: CallDecision[]; dropped: number }[] {
+  const groups = new Map<string, CallDecision[]>();
+  for (const d of result.decisions) {
+    if (d.reason !== 'pinned') groups.set(d.tool, [...(groups.get(d.tool) ?? []), d]);
+  }
+  return [...groups]
+    .map(([tool, decisions]) => ({ tool, decisions, dropped: count(decisions, 'drop_call') }))
+    .sort((a, b) => b.dropped - a.dropped || a.tool.localeCompare(b.tool));
+}
+
+function count(decisions: readonly CallDecision[], action: CallAction): number {
+  return decisions.filter((d) => d.action === action).length;
+}
+
+// A transcript row is cut at the terminal's width budget, and past five tools
+// the breakdown stops being readable anyway; `/fast-jev` lists every tool.
+const SUMMARY_TOOLS = 5;
+
+/** The outcome as one transcript row: messages, reduction, dropped calls per tool, the rest of the counts. */
 export function summarize(result: CompactResult): string {
   const { stats } = result;
-  const parts = [
-    stats.kept > 0 ? `${stats.kept} kept` : '',
-    stats.resultsDropped > 0 ? `${stats.resultsDropped} results truncated` : '',
-    stats.callsDropped > 0 ? `${stats.callsDropped} call_dropped` : '',
-    stats.pinned > 0 ? `${stats.pinned} pinned` : '',
-    stats.unscored > 0 ? `${stats.unscored} unscored` : '',
-  ].filter(Boolean);
-  return `${percent(reductionRatio(result))} reduction; ${
-    parts.join(', ') || 'no tool calls'
-  }; state ~${stats.stateTokens} tokens (${stats.stateStage}) in ${stats.requests} request(s)`;
+  const dropped = byTool(result).filter((group) => group.dropped > 0);
+  const tools = dropped.slice(0, SUMMARY_TOOLS).map((group) => `${group.tool} ${group.dropped}`);
+  if (dropped.length > SUMMARY_TOOLS) tools.push(`+${dropped.length - SUMMARY_TOOLS} tools`);
+  const tokens =
+    stats.stateTokens >= 1000 ? `${(stats.stateTokens / 1000).toFixed(1)}k` : `${stats.stateTokens}`;
+  return [
+    `${stats.messagesBefore}→${stats.messagesAfter} msgs`,
+    `chars -${percent(reductionRatio(result))}`,
+    stats.callsDropped > 0 ? `dropped ${stats.callsDropped} (${tools.join(', ')})` : '',
+    stats.resultsDropped > 0 ? `truncated ${stats.resultsDropped}` : '',
+    stats.kept > 0 ? `kept ${stats.kept}` : '',
+    stats.pinned > 0 ? `pinned ${stats.pinned}` : '',
+    stats.unscored > 0 ? `unscored ${stats.unscored}` : '',
+    `${stats.requests} req`,
+    `state ${tokens} tok`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
-const UI_LOG_MAX_CHARS = 4096;
-
-export function decisionLog(result: CompactResult): string {
-  return result.decisions
-    .filter((d) => d.reason !== 'pinned')
-    .map(
-      (d) =>
-        `${d.id}:${d.tool}:${d.action}/call=${d.keepCall.toFixed(2)}/result=${d.keepResult.toFixed(2)}`,
-    )
-    .join(' ');
+/** min · median · max, two decimals: where Jev's probabilities for one tool sat. */
+function spread(values: readonly number[]): string {
+  const sorted = [...values].sort((a, b) => a - b);
+  const median = (sorted[(sorted.length - 1) >> 1]! + sorted[sorted.length >> 1]!) / 2;
+  return [sorted[0]!, median, sorted[sorted.length - 1]!].map((v) => v.toFixed(2)).join(' · ');
 }
 
-export function decisionLogLines(
-  result: CompactResult,
-  maxChars: number = UI_LOG_MAX_CHARS,
-): string[] {
-  const entries = decisionLog(result).split(' ').filter(Boolean);
-  if (entries.length === 0) return ['decisions: (none)'];
-  const chunks: string[] = [];
-  let current = '';
-  for (const entry of entries) {
-    const next = current ? `${current} ${entry}` : entry;
-    if (current && next.length > maxChars - 24) {
-      chunks.push(current);
-      current = entry;
-    } else current = next;
-  }
-  chunks.push(current);
-  return chunks.map((chunk, index) =>
-    chunks.length === 1
-      ? `decisions: ${chunk}`
-      : `decisions (${index + 1}/${chunks.length}): ${chunk}`,
-  );
+/** `/fast-jev`'s table: per tool, what happened to its calls and the probabilities behind it. */
+export function decisionTable(result: CompactResult): string {
+  const groups = byTool(result);
+  if (groups.length === 0) return 'No tool calls were candidates.';
+  return [
+    '| tool | dropped | truncated | kept | p(call) min · med · max | p(result) min · med · max |',
+    '|---|--:|--:|--:|---|---|',
+    ...groups.map(
+      ({ tool, decisions, dropped }) =>
+        `| ${tool} | ${dropped} | ${count(decisions, 'drop_result')} | ${count(decisions, 'keep')} | ${spread(
+          decisions.map((d) => d.keepCall),
+        )} | ${spread(decisions.map((d) => d.keepResult))} |`,
+    ),
+  ].join('\n');
+}
+
+/** HH:mm in the host's local time zone. */
+function clockTime(ms: number): string {
+  const at = new Date(ms);
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
 }
 
 async function getApiKey(
@@ -332,53 +356,76 @@ async function contextPercent($: {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-function notify(
-  $: {
-    ui: {
-      log: (text: string) => void;
-      toast: (text: string, options?: { timeoutMs?: number }) => void;
-    };
-  },
-  text: string,
-): void {
-  $.ui.log(text);
-  $.ui.toast(text, { timeoutMs: 15_000 });
-}
+type LastCompaction = { time: string; line: string; result?: CompactResult };
 
 export const register: Register = (on: On, options: PluginOptions) => {
   const configured = resolveHookConfig(options);
   let compacting = false;
+  // What `/fast-jev` shows. A module reload runs register again, so it starts empty.
+  let last: LastCompaction | undefined;
+
+  on('session.start', async ($, event, next) => {
+    await $.command.register({
+      name: 'fast-jev',
+      description: 'Show the last fast-jev compaction per tool',
+    });
+    return next(event);
+  });
+
+  on('command.run', { command: 'fast-jev' }, async () => ({
+    text: last
+      ? [
+          `**${last.time}** · ${last.line}`,
+          ...(last.result
+            ? [
+                `state ~${last.result.stats.stateTokens} tokens (${last.result.stats.stateStage}) in ${last.result.stats.requests} request(s)`,
+                decisionTable(last.result),
+              ]
+            : []),
+        ].join('\n\n')
+      : 'No compaction since the plugin loaded.',
+  }));
 
   on('session.compact', async ($, event, next) => {
+    // One transcript row per compaction, and the status line keeps the latest
+    // outcome under the prompt until the next one replaces it.
+    const report = async (line: string, status: string, result?: CompactResult) => {
+      const time = clockTime(await $.clock.now());
+      last = { time, line, ...(result ? { result } : {}) };
+      $.ui.log(line);
+      // The engine already prefixes a plugin's status line with its name.
+      $.ui.status(`${time} · ${status}`);
+    };
     try {
       const config = { ...configured, apiKey: await getApiKey($, configured) };
       const { result, messages } = await compactSession(event.messages, config, async (url, init) => {
         const response = await $.http.fetch(url, init);
         return { status: response.status, ok: response.ok, text: response.text };
       });
-      for (const line of decisionLogLines(result)) $.ui.log(line);
       const outcome = verdict(result, config, await contextPercent($));
       if (outcome.kind === 'capacity') {
-        notify(
-          $,
-          `fallback to built-in summary (window would stay at ~${Math.round(outcome.estimatedPercent)}% after ${summarize(result)})`,
+        const window = `window would stay at ~${Math.round(outcome.estimatedPercent)}%`;
+        await report(
+          `fallback to built-in summary: ${window} · ${summarize(result)}`,
+          `built-in summary: ${window}`,
+          result,
         );
         return next(event);
       }
       const note =
         outcome.kind === 'nothing_to_prune'
-          ? `; candidates were ${percent(outcome.bound)} of the history, the rest is text`
+          ? ` · candidates were ${percent(outcome.bound)} of the history, the rest is text`
           : '';
-      notify(
-        $,
-        `kept ${messages.length}/${event.messages.length} messages, no summary (${summarize(result)}${note})`,
+      const { stats } = result;
+      await report(
+        `${summarize(result)}${note}`,
+        `${stats.messagesBefore}→${stats.messagesAfter} msgs · -${percent(reductionRatio(result))} · ${stats.callsDropped} dropped`,
+        result,
       );
       return { messages };
     } catch (error) {
-      notify(
-        $,
-        `fallback to built-in summary (${error instanceof Error ? error.message : String(error)})`,
-      );
+      const reason = error instanceof Error ? error.message : String(error);
+      await report(`fallback to built-in summary: ${reason}`, `built-in summary: ${reason}`);
       return next(event);
     }
   });

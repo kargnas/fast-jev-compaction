@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   compactSession,
-  decisionLog,
-  decisionLogLines,
+  decisionTable,
   resolveHookConfig,
   summarize,
   toSessionMessages,
@@ -188,21 +187,27 @@ describe('compactSession', () => {
     expect(JSON.parse(bodies[0]!).model).toBe('jev-x');
     expect(output.decisions.map((d) => d.action)).toEqual(['drop_call', 'keep']);
     expect(messages.map((m) => m.handle)).toEqual(['h-0', 'h-tool-2', 'r-tool-2', 'h-5', 'h-6']);
-    expect(summarize(output)).toMatch(/^\d+% reduction; 1 kept, 1 call_dropped; state ~\d+ tokens \(full\) in 1 request\(s\)$/);
-    expect(decisionLog(output)).toBe('t1:Read:drop_call/call=0.10/result=0.10 t2:Bash:keep/call=0.90/result=0.90');
-    expect(decisionLogLines(output)).toEqual([`decisions: ${decisionLog(output)}`]);
+    expect(summarize(output)).toMatch(/^7→5 msgs · chars -\d+% · dropped 1 \(Read 1\) · kept 1 · 1 req · state \d+ tok$/);
+    expect(decisionTable(output).split('\n').slice(2)).toEqual([
+      '| Read | 1 | 0 | 0 | 0.10 · 0.10 · 0.10 | 0.10 · 0.10 · 0.10 |',
+      '| Bash | 0 | 0 | 1 | 0.90 · 0.90 · 0.90 | 0.90 · 0.90 · 0.90 |',
+    ]);
   });
 
-  it('splits a long decision log into ui.log lines under the host limit', async () => {
+  it('groups dropped calls per tool, caps the one-line breakdown and takes a true median', async () => {
     const config = { ...resolveHookConfig({ preserveRecentMessages: 1 }), apiKey: 'k' };
     const { result: output } = await compactSession(transcript(), config, jevFetch(() => 0.1));
-    const lines = decisionLogLines(output, 60);
-    expect(lines).toEqual([
-      'decisions (1/2): t1:Read:drop_call/call=0.10/result=0.10',
-      'decisions (2/2): t2:Bash:drop_call/call=0.10/result=0.10',
-    ]);
-    expect(lines.every((line) => line.length <= 60)).toBe(true);
-    expect(decisionLogLines({ ...output, decisions: [] })).toEqual(['decisions: (none)']);
+    const drop = (id: string, tool: string, keepCall: number) =>
+      ({ id, tool, action: 'drop_call', reason: 'call_dropped', keepCall, keepResult: 0.1 }) as const;
+    const decisions = [
+      ...['A', 'B', 'C', 'D', 'E', 'F'].map((tool, i) => drop(`t${i}`, tool, 0.1)),
+      drop('t6', 'Bash', 0.1),
+      drop('t7', 'Bash', 0.2),
+      { ...drop('t8', 'Bash', 1), action: 'keep', reason: 'pinned' } as const,
+    ];
+    const many = { ...output, decisions, stats: { ...output.stats, callsDropped: 8, kept: 0, stateTokens: 24812 } };
+    expect(summarize(many)).toMatch(/ · dropped 8 \(Bash 2, A 1, B 1, C 1, D 1, \+2 tools\) · 1 req · state 24\.8k tok$/);
+    expect(decisionTable(many).split('\n')[2]).toBe('| Bash | 2 | 0 | 0 | 0.10 · 0.15 · 0.20 | 0.10 · 0.10 · 0.10 |');
   });
 
   it('does not call low reduction a failure when the candidates could not have freed more', async () => {

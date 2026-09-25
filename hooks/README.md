@@ -75,10 +75,12 @@ For a result below `minReductionRatio`, the hook also checks the maximum
 reduction available from candidates and the estimated context usage after
 compaction. It uses the built-in summary when that usage remains at or above
 `compactAtPercent`; otherwise it returns the compacted history, including when
-the candidates could not reach `minReductionRatio`. The outcome is shown as a
-toast and logged with the reduction, per-reason counts, state size and request
-count; a per-call
-`decisions:` line with both probabilities is logged for diagnosis. The
+the candidates could not reach `minReductionRatio`. Each compaction logs one
+transcript line with the message counts, the reduction, dropped calls per
+tool, the other per-reason counts, the request count and the state size, and
+pins the latest outcome as the plugin's status line under the prompt. The
+`/fast-jev` command shows the last compaction since the plugin loaded as a
+per-tool table of decisions and Jev's probabilities (min, median, max). The
 `turn.complete` hook requests
 compaction when `context.percent` reaches `compactAtPercent`, with an
 in-flight guard.
